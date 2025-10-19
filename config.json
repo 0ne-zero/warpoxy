@@ -1,0 +1,20 @@
+{
+  "project_name": "warp_proxy",
+  "num_tunnels": 3,
+  "country": "DE",
+  "haproxy_port": 1080,
+  "fastapi_port": 8000,
+  "warp_socks_port": 1080,
+  "country_endpoints": {
+    "US": "iad.cloudflare-gateway.com:2408",
+    "CA": "yul.cloudflare-gateway.com:2408",
+    "GB": "lhr.cloudflare-gateway.com:2408",
+    "DE": "fra.cloudflare-gateway.com:2408",
+    "FR": "cdg.cloudflare-gateway.com:2408",
+    "IN": "bom.cloudflare-gateway.com:2408",
+    "JP": "nrt.cloudflare-gateway.com:2408",
+    "AU": "syd.cloudflare-gateway.com:2408",
+    "BR": "gru.cloudflare-gateway.com:2408"
+  },
+  "default_endpoint": "engage.cloudflareclient.com:2408"
+}
