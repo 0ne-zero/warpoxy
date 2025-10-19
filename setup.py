@@ -1,5 +1,6 @@
 import json
 import os
+import pathlib
 import sys
 from jinja2 import Environment, FileSystemLoader
 import subprocess
@@ -228,11 +229,15 @@ if __name__ == "__main__":
     logger.info("Generated %s and %s.", COMPOSE_OUTPUT_FILE, HAPROXY_OUTPUT_FILE)
 
     # Step 3: Start all services
+
+    # Copy config.json to api for usage, then remove it
+    shutil.copy(CONFIG_FILE, API_DIR_NAME)
     logger.info("Step 3: Building and starting services with Docker Compose...")
     compose_cmd = ["docker-compose", "-f", COMPOSE_OUTPUT_FILE, "up", "-d", "--build", "--remove-orphans"]
     run_command(compose_cmd, "start services")
     logger.info("Services started successfully.")
-
+    os.remove(pathlib.Path(API_DIR_NAME,CONFIG_FILE))
+    
     # Step 4: Verify setup by checking health
     logger.info("Step 4: Verifying service health...")
     warp_container_names = [f"{config['project_name']}_warp{i}" for i in range(1, config["num_tunnels"] + 1)]
