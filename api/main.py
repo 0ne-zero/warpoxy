@@ -17,12 +17,11 @@ CONFIG_PATH = os.environ.get("CONFIG_PATH", "/app/config.json")
 CURRENT_INDEX_FILE = "/app/current_index.json"
 client = docker.from_env()
 
-
 def load_config():
     try:
         with open(CONFIG_PATH, "r") as f:
             config = json.load(f)
-        required_keys = ["project_name", "num_tunnels", "warp_socks_port", "haproxy_port"]
+        required_keys = ["project_name", "num_tunnels", "warp_socks_port", "haproxy_port", "fastapi_port"]
         for key in required_keys:
             if key not in config:
                 raise ValueError(f"Missing key in config.json: {key}")
@@ -32,6 +31,10 @@ def load_config():
             raise ValueError("warp_socks_port must be a positive integer")
         if not isinstance(config["haproxy_port"], int) or config["haproxy_port"] < 1:
             raise ValueError("haproxy_port must be a positive integer")
+        if not isinstance(config["fastapi_port"], int) or config["fastapi_port"] < 1:
+            raise ValueError("fastapi_port must be a positive integer")
+        if config["haproxy_port"] == config["fastapi_port"]:
+            raise ValueError("haproxy_port and fastapi_port must be different")
         return config
     except FileNotFoundError:
         logger.error("config.json not found at %s", CONFIG_PATH)
@@ -43,7 +46,6 @@ def load_config():
         logger.error("Config validation error: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
 
-
 def load_current_index():
     if os.path.exists(CURRENT_INDEX_FILE):
         try:
@@ -54,7 +56,6 @@ def load_current_index():
             return 0
     return 0
 
-
 def save_current_index(index):
     try:
         with open(CURRENT_INDEX_FILE, "w") as f:
@@ -63,13 +64,12 @@ def save_current_index(index):
         logger.error("Failed to save current_index.json: %s", e)
         raise HTTPException(status_code=500, detail=f"Failed to save current index: {e}")
 
-
 def validate_haproxy_cfg(file_path):
     abs_path = os.path.abspath(file_path)
     for attempt in range(3):
         try:
             result = subprocess.run(
-                ["docker", "run", "--rm", "-v", f"{abs_path}:/usr/local/etc/haproxy/haproxy.cfg:ro",
+                ["docker", "run", "--rm", "-v", f"{abs_path}:/usr/local/etc/haproxy/haproxy.cfg:ro", 
                  "haproxy:2.8", "haproxy", "-c", "-f", "/usr/local/etc/haproxy/haproxy.cfg", "-dr"],
                 check=True, capture_output=True, text=True
             )
@@ -85,13 +85,14 @@ def validate_haproxy_cfg(file_path):
             logger.error("Docker not found or haproxy:2.8 image unavailable")
             return False
 
-
 def generate_haproxy_cfg(config, current_index=0):
     backends = []
     for i in range(1, config["num_tunnels"] + 1):
         weight = 100 if (i - 1) == current_index else 1
         backends.append(f"    server warp{i} warp{i}:{config['warp_socks_port']} check weight {weight}")
-
+    
+    backend_servers = "\n".join(backends)
+    
     cfg = f"""
 global
     log stdout format raw local0 info
@@ -110,7 +111,7 @@ frontend socks5_front
 backend socks5_back
     balance roundrobin
     option httpchk GET /cdn-cgi/trace
-{"\n".join(backends)}\n
+{backend_servers}
 """
     haproxy_file = "/app/haproxy.cfg"
     try:
@@ -121,7 +122,6 @@ backend socks5_back
     except IOError as e:
         logger.error("Failed to write haproxy.cfg: %s", e)
         raise HTTPException(status_code=500, detail=f"Failed to write haproxy.cfg: {e}")
-
 
 def get_public_ip(tunnel_name, socks_port, retries=3, delay=2):
     proxies = {
@@ -141,9 +141,8 @@ def get_public_ip(tunnel_name, socks_port, retries=3, delay=2):
             time.sleep(delay)
     return "N/A"
 
-
 def get_tunnel_status(config, i):
-    container_name = f"{config['project_name']}-warp{i}-1"
+    container_name = f"{config['project_name']}_warp{i}"
     try:
         container = client.containers.get(container_name)
         return container.status
@@ -153,7 +152,6 @@ def get_tunnel_status(config, i):
     except docker.errors.APIError as e:  # type: ignore
         logger.error("Docker API error for %s: %s", container_name, e)
         return "error"
-
 
 @app.get("/current")
 def get_current():
@@ -172,17 +170,16 @@ def get_current():
         })
     return {"tunnels": tunnels}
 
-
 @app.post("/rotate")
 def rotate():
     config = load_config()
     current_index = load_current_index()
     new_index = (current_index + 1) % config["num_tunnels"]
     save_current_index(new_index)
-
+    
     generate_haproxy_cfg(config, new_index)
-
-    haproxy_container = f"{config['project_name']}-haproxy-1"
+    
+    haproxy_container = f"{config['project_name']}_haproxy"
     try:
         container = client.containers.get(haproxy_container)
         container.kill(signal="HUP")
@@ -193,4 +190,3 @@ def rotate():
         raise HTTPException(status_code=500, detail="HAProxy container not found")
     except docker.errors.APIError as e:  # type: ignore
         logger.error("Failed to reload HAProxy %s: %s", haproxy_container, e)
-        raise HTTPException(status_code=500, detail=f"Failed to reload HAProxy: {e}")

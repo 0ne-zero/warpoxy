@@ -1,0 +1,62 @@
+version: '3.8'
+services:
+{% for name, service_config in warp_services.items() %}
+  {{ name }}:
+    build:
+      context: {{ service_config.build.context }}
+      dockerfile: {{ service_config.build.dockerfile }}
+    container_name: {{ service_config.container_name }}
+    restart: {{ service_config.restart }}
+    environment:
+{% for k, v in service_config.environment.items() %}
+      - {{ k }}={{ v }}
+{% endfor %}
+    networks:
+      - warpnet
+    healthcheck:
+      test: {{ service_config.healthcheck.test | tojson }}
+      interval: {{ service_config.healthcheck.interval }}
+      timeout: {{ service_config.healthcheck.timeout }}
+      retries: {{ service_config.healthcheck.retries }}
+      start_period: {{ service_config.healthcheck.start_period }}
+    volumes:
+{% for v in service_config.volumes %}
+      - {{ v }}
+{% endfor %}
+{% endfor %}
+  haproxy:
+    image: haproxy:2.8
+    container_name: {{ project_name }}_haproxy
+    restart: always
+    ports:
+      - "{{ haproxy_port }}:{{ haproxy_port }}"
+    volumes:
+      - ./haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    networks:
+      - warpnet
+    depends_on:
+{% for name in warp_services.keys() %}
+      {{ name }}:
+        condition: service_healthy
+{% endfor %}
+
+  api:
+    build:
+      context: {{ api_service.build.context }}
+      dockerfile: {{ api_service.build.dockerfile }}
+    container_name: {{ api_service.container_name }}
+    restart: {{ api_service.restart }}
+    ports:
+      - "{{ fastapi_port }}:{{ fastapi_port }}"
+    volumes:
+      - {{ SCRIPT_DIR }}:/app
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      - CONFIG_PATH=/app/config.json
+    command: uvicorn main:app --host 0.0.0.0 --port {{ fastapi_port }} --log-level warning
+    networks:
+      - warpnet
+
+networks:
+  warpnet:
+    driver: bridge

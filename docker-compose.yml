@@ -1,0 +1,120 @@
+version: '3.8'
+services:
+
+  warp1:
+    build:
+      context: /opt/warpoxy
+      dockerfile: warp/Dockerfile.warp
+    container_name: warp_proxy_warp1
+    restart: always
+    environment:
+
+      - ENDPOINT=fra.cloudflare-gateway.com:2408
+
+      - SOCKS5_PORT=1080
+
+    networks:
+      - warpnet
+    healthcheck:
+      test: ["CMD-SHELL", "curl -x socks5h://127.0.0.1:1080 --silent --fail --connect-timeout 3 https://1.1.1.1 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 180s
+    volumes:
+
+      - /opt/warpoxy/warp/warp1_config:/config
+
+
+  warp2:
+    build:
+      context: /opt/warpoxy
+      dockerfile: warp/Dockerfile.warp
+    container_name: warp_proxy_warp2
+    restart: always
+    environment:
+
+      - ENDPOINT=fra.cloudflare-gateway.com:2408
+
+      - SOCKS5_PORT=1080
+
+    networks:
+      - warpnet
+    healthcheck:
+      test: ["CMD-SHELL", "curl -x socks5h://127.0.0.1:1080 --silent --fail --connect-timeout 3 https://1.1.1.1 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 180s
+    volumes:
+
+      - /opt/warpoxy/warp/warp2_config:/config
+
+
+  warp3:
+    build:
+      context: /opt/warpoxy
+      dockerfile: warp/Dockerfile.warp
+    container_name: warp_proxy_warp3
+    restart: always
+    environment:
+
+      - ENDPOINT=fra.cloudflare-gateway.com:2408
+
+      - SOCKS5_PORT=1080
+
+    networks:
+      - warpnet
+    healthcheck:
+      test: ["CMD-SHELL", "curl -x socks5h://127.0.0.1:1080 --silent --fail --connect-timeout 3 https://1.1.1.1 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 180s
+    volumes:
+
+      - /opt/warpoxy/warp/warp3_config:/config
+
+
+  haproxy:
+    image: haproxy:2.8
+    container_name: warp_proxy_haproxy
+    restart: always
+    ports:
+      - "9999:9999"
+    volumes:
+      - ./haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    networks:
+      - warpnet
+    depends_on:
+
+      warp1:
+        condition: service_healthy
+
+      warp2:
+        condition: service_healthy
+
+      warp3:
+        condition: service_healthy
+
+
+  api:
+    build:
+      context: /opt/warpoxy/api
+      dockerfile: Dockerfile.api
+    container_name: warp_proxy_api
+    restart: always
+    ports:
+      - "9090:9090"
+    volumes:
+      - /opt/warpoxy:/app
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      - CONFIG_PATH=/app/config.json
+    command: uvicorn main:app --host 0.0.0.0 --port 9090 --log-level warning
+    networks:
+      - warpnet
+
+networks:
+  warpnet:
+    driver: bridge

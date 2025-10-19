@@ -1,0 +1,16 @@
+global
+    log stdout format raw local0 info
+defaults
+    log global
+    mode tcp
+    timeout connect 10s
+    timeout client 60s
+    timeout server 60s
+frontend socks5_front
+    bind *:{{ haproxy_port }}
+    default_backend socks5_back
+backend socks5_back
+    balance roundrobin
+{% for backend in backends %}
+    server {{ backend.name }} {{ backend.name }}:{{ backend.port }} check
+{% endfor %}

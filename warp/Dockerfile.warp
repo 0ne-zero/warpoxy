@@ -1,0 +1,41 @@
+FROM ubuntu:22.04
+
+# Set environment variables for versions and settings
+ENV PUID=911
+ENV PGID=911
+ENV TZ=Asia/Shanghai
+ENV SOCKS5_PORT=1080
+ENV ENDPOINT=engage.cloudflareclient.com:2408
+
+# Combine installation steps into a single RUN command to reduce image layers
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    curl \
+    wireguard-tools \
+    ca-certificates \
+    && \
+    # Install wgcf binary
+    curl -fL "https://github.com/ViRb3/wgcf/releases/download/v2.2.29/wgcf_2.2.29_linux_amd64" -o /usr/local/bin/wgcf && \
+    chmod +x /usr/local/bin/wgcf && \
+    # FIX: Verify the binary using a supported command like 'help' instead of '--version'
+    # We redirect output to /dev/null because we only care if the command succeeds (exit code 0)
+    wgcf help > /dev/null || { echo "wgcf binary verification failed"; exit 1; } && \
+    # Install wireproxy
+    curl -fL "https://github.com/pufferffish/wireproxy/releases/download/v1.0.9/wireproxy_linux_amd64.tar.gz" -o /tmp/wireproxy.tar.gz && \
+    tar -xzf /tmp/wireproxy.tar.gz -C /usr/local/bin/ wireproxy && \
+    chmod +x /usr/local/bin/wireproxy && \
+    # Clean up downloaded files and apt cache
+    rm -rf /var/lib/apt/lists/* /tmp/wireproxy.tar.gz
+
+# Create configuration directory
+RUN mkdir -p /config
+
+# Copy entrypoint script
+COPY warp/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+# Expose SOCKS5 port
+EXPOSE 1080
+
+# Run entrypoint
+ENTRYPOINT ["/entrypoint.sh"]
