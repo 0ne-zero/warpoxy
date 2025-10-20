@@ -23,6 +23,8 @@ COMPOSE_OUTPUT_FILE = SCRIPT_DIR / "docker-compose.yml"
 HAPROXY_OUTPUT_FILE = SCRIPT_DIR / "haproxy.cfg"
 CONFIG_FILE = SCRIPT_DIR / "config.json"
 API_DIR_CONFIG_FILE = API_DIR / "config.json"
+CURRENT_INDEX_FILE = SCRIPT_DIR / "current_index.json"
+
 
 # --- Logger Setup ---
 # This will be configured in main()
@@ -227,6 +229,11 @@ def main() -> None:
             (WARP_DIR / f"warp{i}_config").mkdir(exist_ok=True)
         generate_files_from_templates(config)
         logger.info("✅ Generated %s and %s.", COMPOSE_OUTPUT_FILE.name, HAPROXY_OUTPUT_FILE.name)
+
+        if not CURRENT_INDEX_FILE.exists():
+            logger.info("Initializing state file: %s", CURRENT_INDEX_FILE.name)
+            with open(CURRENT_INDEX_FILE, "w") as f:
+                json.dump({"index": 0}, f)
 
         # Step 3: Start all services
         logger.info("[STEP 3/4] Building and starting services with Docker Compose...")
