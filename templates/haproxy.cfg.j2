@@ -3,14 +3,18 @@ global
 defaults
     log global
     mode tcp
-    timeout connect 10s
+    timeout connect 30s
     timeout client 60s
     timeout server 60s
 frontend socks5_front
     bind *:{{ haproxy_port }}
     default_backend socks5_back
 backend socks5_back
-    balance roundrobin
+    balance first
+    # The httpchk option is a good way for HAProxy to verify that the
+    # WARP tunnel is actually connected to Cloudflare's network.
+    # option httpchk GET /cdn-cgi/trace
+    
 {% for backend in backends %}
-    server {{ backend.name }} {{ backend.name }}:{{ backend.port }} check
+    server {{ backend.name }} {{ backend.name }}:{{ backend.port }} check weight {{ backend.weight }}
 {% endfor %}
