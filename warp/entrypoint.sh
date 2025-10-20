@@ -10,7 +10,6 @@ PROFILE_FILE="${CONFIG_DIR}/wgcf-profile.conf"
 LOG_FILE="${CONFIG_DIR}/wireproxy.log"
 
 # --- One-Time WARP Setup ---
-# No need to change user, just run the commands directly.
 cd "${CONFIG_DIR}"
 
 # Register Cloudflare WARP account if not already done
@@ -25,7 +24,25 @@ if [ ! -f "${PROFILE_FILE}" ]; then
     wgcf generate --config "${ACCOUNT_FILE}" --profile "${PROFILE_FILE}"
 fi
 
-# --- Configure WireProxy directly in the profile ---
+# --- DYNAMIC ENDPOINT REPLACEMENT ---
+# This is the critical step to ensure IP diversification.
+# The ENDPOINT variable is passed in from docker-compose.
+
+# For debugging
+export ENDPOINT="engage.cloudflareclient.com:2408" 
+
+
+if [ -n "${ENDPOINT}" ]; then
+    echo "Found ENDPOINT variable. Replacing endpoint in ${PROFILE_FILE}..."
+    # Use sed to find the line starting with "Endpoint =" and replace it.
+    # The `|` is used as a separator to avoid issues with slashes in the endpoint.
+    sed -i "s|Endpoint =.*|Endpoint = ${ENDPOINT}|" "${PROFILE_FILE}"
+    echo "Endpoint successfully replaced with: ${ENDPOINT}"
+else
+    echo "ENDPOINT variable not set. Using default endpoint from profile."
+fi
+
+# --- Configure SOCKS5 Proxy directly in the profile ---
 echo "Ensuring [Socks5] configuration exists in ${PROFILE_FILE}..."
 
 # Check if the section header is missing.
@@ -41,5 +58,4 @@ fi
 # --- Start WireProxy ---
 echo "Starting wireproxy using the profile at ${PROFILE_FILE}..."
 # 'exec' ensures that wireproxy becomes the main process (PID 1).
-# No need for 'su' or 'su-exec' as we are already root.
 exec wireproxy -c "${PROFILE_FILE}" 2>&1 | tee "${LOG_FILE}"
