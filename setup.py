@@ -2,6 +2,8 @@ import json
 import os
 import pathlib
 import sys
+import argparse
+from typing import List, Dict, Any
 from jinja2 import Environment, FileSystemLoader
 import subprocess
 import logging
@@ -10,32 +12,49 @@ import time
 import shutil
 
 # --- Constants ---
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-TEMPLATES_DIR = "templates"
-WARP_DIR_NAME = "warp"
-API_DIR_NAME = "api"
+SCRIPT_DIR = pathlib.Path(__file__).parent.resolve()
+TEMPLATES_DIR = SCRIPT_DIR / "templates"
+WARP_DIR = SCRIPT_DIR / "warp"
+API_DIR = SCRIPT_DIR / "api"
 COMPOSE_TEMPLATE_FILE = "docker-compose.yml.j2"
 HAPROXY_TEMPLATE_FILE = "haproxy.cfg.j2"
-COMPOSE_OUTPUT_FILE = "docker-compose.yml"
-HAPROXY_OUTPUT_FILE = "haproxy.cfg"
-CONFIG_FILE = "config.json"
+COMPOSE_OUTPUT_FILE = SCRIPT_DIR / "docker-compose.yml"
+HAPROXY_OUTPUT_FILE = SCRIPT_DIR / "haproxy.cfg"
+CONFIG_FILE = SCRIPT_DIR / "config.json"
+API_DIR_CONFIG_FILE = API_DIR / "config.json"
+LOG_FILE = SCRIPT_DIR / "setup.log"
 
-# Configure detailed logging for development
-logging.basicConfig(
-    level=logging.DEBUG,
-    format="%(asctime)s - %(levelname)s - [%(funcName)s] %(message)s",
-    stream=sys.stdout
-)
+# --- Logger Setup ---
+# This will be configured in main()
 logger = logging.getLogger(__name__)
 
-# --- CONFIGURATION & VALIDATION ---
 
-def load_config():
+def setup_logging(verbose: bool) -> None:
+    """Configure logging to console and a file with beautiful output."""
+    console_level = logging.DEBUG if verbose else logging.INFO
+    
+    # Console Handler (for beautiful, high-level output)
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(console_level)
+    console_formatter = logging.Formatter("[%(levelname)s] %(message)s")
+    console_handler.setFormatter(console_formatter)
+
+    # File Handler (for detailed, debug-level output)
+    file_handler = logging.FileHandler(LOG_FILE, mode='w')
+    file_handler.setLevel(logging.DEBUG)
+    file_formatter = logging.Formatter("%(asctime)s - %(levelname)s - [%(funcName)s:%(lineno)d] %(message)s")
+    file_handler.setFormatter(file_formatter)
+
+    # Configure the root logger
+    logging.basicConfig(level=logging.DEBUG, handlers=[console_handler, file_handler])
+    logger.info("Logging initialized. Detailed logs are in %s", LOG_FILE)
+
+
+def load_config() -> Dict[str, Any]:
     """Loads and validates the config.json file."""
-    config_path = os.path.join(SCRIPT_DIR, CONFIG_FILE)
-    logger.debug("Attempting to load config from: %s", config_path)
+    logger.debug("Attempting to load config from: %s", CONFIG_FILE)
     try:
-        with open(config_path, "r") as f:
+        with open(CONFIG_FILE, "r") as f:
             config = json.load(f)
         logger.debug("Config file found and parsed successfully.")
 
@@ -55,26 +74,26 @@ def load_config():
         logger.debug("Config validation passed.")
         return config
     except (FileNotFoundError, json.JSONDecodeError, ValueError) as e:
-        logger.error("Configuration error in '%s': %s", config_path, e)
+        logger.error("Configuration error in '%s': %s", CONFIG_FILE, e)
         sys.exit(1)
 
-# --- DOCKER & SYSTEM UTILITIES ---
 
-def run_command(cmd, description):
-    """Runs a command, handling errors and logging its full output."""
+def run_command(cmd: List[str], description: str) -> None:
+    """Runs a command, handling errors and logging its full output to the log file."""
     logger.debug("Running command to %s: %s", description, " ".join(cmd))
     try:
-        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+        result = subprocess.run(cmd, check=True, capture_output=True, text=True, cwd=SCRIPT_DIR)
+        # Log stdout/stderr to the debug log file for troubleshooting
         if result.stdout:
             logger.debug("Command stdout:\n---\n%s---", result.stdout.strip())
         if result.stderr:
             logger.debug("Command stderr:\n---\n%s---", result.stderr.strip())
-        return result
     except FileNotFoundError:
         logger.error("Command '%s' not found. Is Docker installed and in your PATH?", cmd[0])
         sys.exit(1)
     except subprocess.CalledProcessError as e:
         logger.error("Failed to %s.", description)
+        # Log detailed error output before exiting
         if e.stdout:
             logger.error("Command stdout:\n---\n%s---", e.stdout.strip())
         if e.stderr:
@@ -82,10 +101,11 @@ def run_command(cmd, description):
         log_docker_ps()
         sys.exit(1)
 
-def wait_for_healthy_containers(container_names, timeout=300):
+
+def wait_for_healthy_containers(container_names: List[str], timeout: int = 300) -> bool:
     """Polls containers until they are all healthy or a timeout is reached."""
-    start_time = time.time()
     logger.info("Waiting for WARP containers to become healthy...")
+    start_time = time.time()
     while time.time() - start_time < timeout:
         try:
             result = subprocess.run(
@@ -99,54 +119,43 @@ def wait_for_healthy_containers(container_names, timeout=300):
             progress = healthy_count / len(container_names)
             bar_length = 30
             filled_length = int(bar_length * progress)
-            bar = '█' * filled_length + '-' * (bar_length - filled_length)
+            bar = '█' * filled_length + '─' * (bar_length - filled_length)
+            # Use a carriage return to keep the progress bar on one line
             sys.stdout.write(f"\rProgress: [{bar}] {healthy_count}/{len(container_names)} healthy")
             sys.stdout.flush()
 
             if healthy_count == len(container_names):
-                sys.stdout.write("\n")
-                logger.info("All WARP containers are healthy.")
+                sys.stdout.write("\n")  # Move to the next line after completion
                 return True
         except (subprocess.CalledProcessError, IndexError) as e:
             logger.debug("Could not inspect containers yet (they may be starting). Error: %s", e)
-            pass
         time.sleep(5)
 
     sys.stdout.write("\n")
     logger.error("Timeout reached while waiting for containers to become healthy.")
     return False
 
-def log_docker_ps():
+
+def log_docker_ps() -> None:
     """Logs the output of 'docker ps -a' for debugging failures."""
     logger.info("Dumping container status ('docker ps -a')...")
     try:
         result = subprocess.run(["docker", "ps", "-a"], check=True, capture_output=True, text=True)
-        sys.stderr.write("--- DOCKER PS -A ---\n")
-        sys.stderr.write(result.stdout + "\n")
-        sys.stderr.write("--------------------\n")
+        # Log to the main logger, which will go to the file and console
+        logger.debug("--- DOCKER PS -A ---\n%s\n--------------------", result.stdout)
     except (subprocess.CalledProcessError, FileNotFoundError) as e:
-        sys.stderr.write(f"Could not execute 'docker ps -a': {e}\n")
+        logger.error("Could not execute 'docker ps -a': %s", e)
 
-# --- FILE GENERATION ---
 
-def generate_files_from_templates(config):
+def generate_files_from_templates(config: Dict[str, Any]) -> None:
     """Generates docker-compose.yml and haproxy.cfg from external templates."""
-    template_path = os.path.join(SCRIPT_DIR, TEMPLATES_DIR)
-    logger.debug("Initializing Jinja2 environment with template path: %s", template_path)
-    env = Environment(loader=FileSystemLoader(template_path))
+    env = Environment(loader=FileSystemLoader(TEMPLATES_DIR), autoescape=True)
 
     # --- Prepare context for docker-compose.yml ---
-    logger.debug("Preparing context for docker-compose template...")
     endpoint = config["country_endpoints"].get(config["country"].upper(), config["default_endpoint"])
-    
-    # WARP services context
-    warp_services = {}
-    for i in range(1, config["num_tunnels"] + 1):
-        warp_services[f"warp{i}"] = {
-            "build": {
-                "context": SCRIPT_DIR,
-                "dockerfile": os.path.join(WARP_DIR_NAME, "Dockerfile.warp")
-            },
+    warp_services = {
+        f"warp{i}": {
+            "build": {"context": SCRIPT_DIR, "dockerfile": WARP_DIR / "Dockerfile.warp"},
             "container_name": f"{config['project_name']}_warp{i}",
             "restart": "always",
             "environment": {"ENDPOINT": endpoint, "SOCKS5_PORT": str(config["warp_socks_port"])},
@@ -154,15 +163,11 @@ def generate_files_from_templates(config):
                 "test": ["CMD-SHELL", "curl -x socks5h://127.0.0.1:1080 --silent --fail --connect-timeout 3 https://1.1.1.1 || exit 1"],
                 "interval": "30s", "timeout": "10s", "retries": "3", "start_period": "180s"
             },
-            "volumes": [f"{os.path.join(SCRIPT_DIR, WARP_DIR_NAME, f'warp{i}_config')}:/config"]
-        }
-
-    # API service context
+            "volumes": [f"{WARP_DIR / f'warp{i}_config'}:/config"]
+        } for i in range(1, config["num_tunnels"] + 1)
+    }
     api_service = {
-        "build": {
-            "context": os.path.join(SCRIPT_DIR, API_DIR_NAME),
-            "dockerfile": "Dockerfile.api"
-        },
+        "build": {"context": API_DIR, "dockerfile": "Dockerfile.api"},
         "container_name": f"{config['project_name']}_api",
         "restart": "always"
     }
@@ -170,12 +175,8 @@ def generate_files_from_templates(config):
     try:
         compose_template = env.get_template(COMPOSE_TEMPLATE_FILE)
         compose_content = compose_template.render(
-            warp_services=warp_services,
-            api_service=api_service,
-            SCRIPT_DIR=SCRIPT_DIR,
-            **config
+            warp_services=warp_services, api_service=api_service, SCRIPT_DIR=SCRIPT_DIR, **config
         )
-        logger.debug("--- Generated %s content ---\n%s\n--------------------", COMPOSE_OUTPUT_FILE, compose_content)
         with open(COMPOSE_OUTPUT_FILE, "w") as f:
             f.write(compose_content)
         logger.debug("Successfully wrote %s", COMPOSE_OUTPUT_FILE)
@@ -184,19 +185,13 @@ def generate_files_from_templates(config):
         sys.exit(1)
 
     # --- Generate haproxy.cfg ---
-    logger.debug("Preparing context for haproxy template...")
-    backends = []
-    for i in range(1, config["num_tunnels"] + 1):
-        backends.append({"name": f"warp{i}", "port": config['warp_socks_port']})
-
-    if os.path.isdir(HAPROXY_OUTPUT_FILE):
+    backends = [{"name": f"warp{i}", "port": config['warp_socks_port']} for i in range(1, config["num_tunnels"] + 1)]
+    if HAPROXY_OUTPUT_FILE.is_dir():
         logger.warning("Removing leftover '%s' directory from a previous failed run.", HAPROXY_OUTPUT_FILE)
         shutil.rmtree(HAPROXY_OUTPUT_FILE)
-
     try:
         haproxy_template = env.get_template(HAPROXY_TEMPLATE_FILE)
         haproxy_content = haproxy_template.render(backends=backends, **config)
-        logger.debug("--- Generated %s content ---\n%s\n--------------------", HAPROXY_OUTPUT_FILE, haproxy_content)
         with open(HAPROXY_OUTPUT_FILE, "w") as f:
             f.write(haproxy_content)
         logger.debug("Successfully wrote %s", HAPROXY_OUTPUT_FILE)
@@ -204,54 +199,60 @@ def generate_files_from_templates(config):
         logger.error("Failed to generate %s: %s", HAPROXY_OUTPUT_FILE, e)
         sys.exit(1)
 
-# --- MAIN EXECUTION ---
+
+def main() -> None:
+    """Main orchestration function for the setup process."""
+    parser = argparse.ArgumentParser(description="Setup script for the WARPoxy project.")
+    parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose debug logging to the console.")
+    args = parser.parse_args()
+    
+    setup_logging(args.verbose)
+    
+    try:
+        logger.info("--- 🚀 Starting WARPoxy Setup 🚀 ---")
+
+        # Step 1: Load configuration
+        logger.info("[STEP 1/4] Loading configuration...")
+        config = load_config()
+        logger.info("✅ Configuration loaded: %d tunnels in %s.", config["num_tunnels"], config["country"])
+        os.environ['COMPOSE_PROJECT_NAME'] = config["project_name"]
+
+        # Step 2: Prepare Environment
+        logger.info("[STEP 2/4] Preparing environment and generating config files...")
+        run_command(["docker", "pull", "haproxy:2.8"], "pull haproxy:2.8 image")
+        for i in range(1, config["num_tunnels"] + 1):
+            (WARP_DIR / f"warp{i}_config").mkdir(exist_ok=True)
+        generate_files_from_templates(config)
+        logger.info("✅ Generated %s and %s.", COMPOSE_OUTPUT_FILE.name, HAPROXY_OUTPUT_FILE.name)
+
+        # Step 3: Start all services
+        logger.info("[STEP 3/4] Building and starting services with Docker Compose...")
+        shutil.copy(SCRIPT_DIR / CONFIG_FILE, API_DIR)
+        compose_cmd = ["docker-compose", "-f", str(COMPOSE_OUTPUT_FILE), "up", "-d", "--build", "--remove-orphans"]
+        run_command(compose_cmd, "start services")
+        logger.info("✅ Services started successfully.")
+        os.remove(API_DIR_CONFIG_FILE)
+
+        # Step 4: Verify setup by checking health
+        logger.info("[STEP 4/4] Verifying service health...")
+        warp_container_names = [f"{config['project_name']}_warp{i}" for i in range(1, config["num_tunnels"] + 1)]
+        if not wait_for_healthy_containers(warp_container_names):
+            log_docker_ps()
+            raise RuntimeError("One or more WARP containers failed to become healthy.")
+
+        haproxy_port = config['haproxy_port']
+        if socket.socket().connect_ex(('127.0.0.1', haproxy_port)) != 0:
+            raise RuntimeError(f"Verification failed: HAProxy is not responding on port {haproxy_port}.")
+        logger.info("✅ Health verification complete.")
+
+        logger.info("--- 🎉 Setup Complete 🎉 ---")
+        logger.info("Proxy is available at: 127.0.0.1:%d (SOCKS5)", config["haproxy_port"])
+        logger.info("API is available at: http://127.0.0.1:%d", config["fastapi_port"])
+
+    except Exception as e:
+        logger.error("❌ An unexpected error occurred during setup: %s", e)
+        sys.exit(1)
+
 
 if __name__ == "__main__":
-    logger.info("--- Starting WARPoxy Setup ---")
-
-    # Step 1: Load configuration from file
-    logger.info("Step 1: Loading configuration from %s...", CONFIG_FILE)
-    config = load_config()
-    logger.info("Configuration loaded: %d tunnels in %s.", config["num_tunnels"], config["country"])
-    logger.debug("Full configuration: \n%s", json.dumps(config, indent=2))
-    os.environ['COMPOSE_PROJECT_NAME'] = config["project_name"]
-
-    # Step 2: Prepare Environment
-    logger.info("Step 2: Preparing environment and generating config files...")
-    run_command(["docker", "pull", "haproxy:2.8"], "pull haproxy:2.8 image")
-
-    for i in range(1, config["num_tunnels"] + 1):
-        dir_path = os.path.join(SCRIPT_DIR, WARP_DIR_NAME, f"warp{i}_config")
-        logger.debug("Ensuring directory exists: %s", dir_path)
-        os.makedirs(dir_path, exist_ok=True)
-
-    generate_files_from_templates(config)
-    logger.info("Generated %s and %s.", COMPOSE_OUTPUT_FILE, HAPROXY_OUTPUT_FILE)
-
-    # Step 3: Start all services
-
-    # Copy config.json to api for usage, then remove it
-    shutil.copy(CONFIG_FILE, API_DIR_NAME)
-    logger.info("Step 3: Building and starting services with Docker Compose...")
-    compose_cmd = ["docker-compose", "-f", COMPOSE_OUTPUT_FILE, "up", "-d", "--build", "--remove-orphans"]
-    run_command(compose_cmd, "start services")
-    logger.info("Services started successfully.")
-    os.remove(pathlib.Path(API_DIR_NAME,CONFIG_FILE))
-    
-    # Step 4: Verify setup by checking health
-    logger.info("Step 4: Verifying service health...")
-    warp_container_names = [f"{config['project_name']}_warp{i}" for i in range(1, config["num_tunnels"] + 1)]
-    if not wait_for_healthy_containers(warp_container_names):
-        logger.error("One or more WARP containers failed to become healthy. Check logs above.")
-        log_docker_ps()
-        sys.exit(1)
-
-    haproxy_port = config['haproxy_port']
-    logger.debug("Verifying HAProxy port %d is open on 127.0.0.1...", haproxy_port)
-    if socket.socket().connect_ex(('127.0.0.1', haproxy_port)) != 0:
-        logger.error("Verification failed: HAProxy is not responding on port %d.", haproxy_port)
-        sys.exit(1)
-
-    logger.info("--- Setup Complete ---")
-    logger.info("Proxy is available at: 127.0.0.1:%d (SOCKS5)", config["haproxy_port"])
-    logger.info("API is available at: http://127.0.0.1:%d", config["fastapi_port"])
+    main()
