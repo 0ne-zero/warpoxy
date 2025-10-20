@@ -1,192 +1,229 @@
-from fastapi import FastAPI, HTTPException
-import os
 import json
-import requests
-import docker
-import docker.errors
+import os
+import pathlib
 import time
 import logging
-import subprocess
+from typing import List, Dict, Any, Optional
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+import docker
+import docker.errors
+import requests
+from fastapi import FastAPI, HTTPException, Depends
+from pydantic import BaseModel, Field
+from jinja2 import Environment, FileSystemLoader
+from fastapi.middleware.cors import CORSMiddleware
+
+# --- Constants ---
+# BUG FIX: All paths are now correctly relative to the /app WORKDIR inside the container.
+APP_DIR = pathlib.Path(__file__).parent.resolve()
+TEMPLATES_DIR = APP_DIR / "templates"
+CONFIG_PATH = APP_DIR / "config.json"
+CURRENT_INDEX_FILE = APP_DIR / "current_index.json"
+HAPROXY_TEMPLATE_FILE = "haproxy.cfg.j2"
+HAPROXY_CONFIG_FILE = APP_DIR / "haproxy.cfg"
+
+# --- Logging Configuration ---
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - [%(funcName)s] %(message)s")
 logger = logging.getLogger(__name__)
 
-app = FastAPI()
+# --- Pydantic Models ---
+class Tunnel(BaseModel):
+    name: str
+    status: str
+    public_ip: Optional[str] = Field(None, alias="publicIP")
+    is_active: bool = Field(..., alias="isActive")
+    direct_access_port: Optional[int] = Field(None, alias="directAccessPort")
 
-CONFIG_PATH = os.environ.get("CONFIG_PATH", "/app/config.json")
-CURRENT_INDEX_FILE = "/app/current_index.json"
-client = docker.from_env()
+class RotateResponse(BaseModel):
+    status: str
+    new_active_tunnel: str = Field(..., alias="newActiveTunnel")
 
-def load_config():
+# --- FastAPI Application Setup ---
+app = FastAPI(
+    title="WARPoxy API",
+    description="An API to manage and rotate a pool of Cloudflare WARP tunnels.",
+    version="1.0.0",
+)
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+
+# --- Dependency Injection ---
+def get_docker_client() -> docker.DockerClient:
+    """Provides a Docker client, raising an exception if unavailable."""
+    try:
+        return docker.from_env()
+    except docker.errors.DockerException as e:
+        logger.error("Could not connect to Docker daemon. Is it running? Error: %s", e)
+        raise HTTPException(status_code=503, detail="Cannot connect to Docker daemon.")
+
+def get_config() -> Dict[str, Any]:
+    """Loads and validates the main configuration file."""
     try:
         with open(CONFIG_PATH, "r") as f:
-            config = json.load(f)
-        required_keys = ["project_name", "num_tunnels", "warp_socks_port", "haproxy_port", "fastapi_port"]
-        for key in required_keys:
-            if key not in config:
-                raise ValueError(f"Missing key in config.json: {key}")
-        if not isinstance(config["num_tunnels"], int) or config["num_tunnels"] < 1:
-            raise ValueError("num_tunnels must be an integer >= 1")
-        if not isinstance(config["warp_socks_port"], int) or config["warp_socks_port"] < 1:
-            raise ValueError("warp_socks_port must be a positive integer")
-        if not isinstance(config["haproxy_port"], int) or config["haproxy_port"] < 1:
-            raise ValueError("haproxy_port must be a positive integer")
-        if not isinstance(config["fastapi_port"], int) or config["fastapi_port"] < 1:
-            raise ValueError("fastapi_port must be a positive integer")
-        if config["haproxy_port"] == config["fastapi_port"]:
-            raise ValueError("haproxy_port and fastapi_port must be different")
-        return config
-    except FileNotFoundError:
-        logger.error("config.json not found at %s", CONFIG_PATH)
-        raise HTTPException(status_code=500, detail="config.json not found")
-    except json.JSONDecodeError:
-        logger.error("Invalid JSON in config.json")
-        raise HTTPException(status_code=500, detail="Invalid config.json")
-    except ValueError as e:
-        logger.error("Config validation error: %s", e)
-        raise HTTPException(status_code=500, detail=str(e))
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError) as e:
+        logger.error("Configuration error: %s", e)
+        raise HTTPException(status_code=500, detail=f"Server configuration error: {e}")
 
-def load_current_index():
-    if os.path.exists(CURRENT_INDEX_FILE):
-        try:
-            with open(CURRENT_INDEX_FILE, "r") as f:
-                return json.load(f).get("index", 0)
-        except (json.JSONDecodeError, IOError) as e:
-            logger.error("Failed to read current_index.json: %s", e)
-            return 0
-    return 0
+# --- State Management ---
+def get_current_index() -> int:
+    """Loads the index of the currently active tunnel."""
+    if not CURRENT_INDEX_FILE.exists():
+        return 0
+    try:
+        with open(CURRENT_INDEX_FILE, "r") as f:
+            return json.load(f).get("index", 0)
+    except (json.JSONDecodeError, IOError) as e:
+        logger.warning("Failed to read current_index.json, defaulting to 0. Error: %s", e)
+        return 0
 
-def save_current_index(index):
+def save_current_index(index: int) -> None:
+    """Saves the index of the active tunnel."""
     try:
         with open(CURRENT_INDEX_FILE, "w") as f:
             json.dump({"index": index}, f)
     except IOError as e:
         logger.error("Failed to save current_index.json: %s", e)
-        raise HTTPException(status_code=500, detail=f"Failed to save current index: {e}")
+        raise HTTPException(status_code=500, detail="Failed to save state.")
 
-def validate_haproxy_cfg(file_path):
-    abs_path = os.path.abspath(file_path)
-    for attempt in range(3):
-        try:
-            result = subprocess.run(
-                ["docker", "run", "--rm", "-v", f"{abs_path}:/usr/local/etc/haproxy/haproxy.cfg:ro", 
-                 "haproxy:2.8", "haproxy", "-c", "-f", "/usr/local/etc/haproxy/haproxy.cfg", "-dr"],
-                check=True, capture_output=True, text=True
-            )
-            logger.info("HAProxy config validation: %s", result.stdout.strip())
-            return True
-        except subprocess.CalledProcessError as e:
-            logger.error("HAProxy config validation failed (attempt %d): %s", attempt + 1, e.stderr)
-            if attempt < 2:
-                time.sleep(1)
-            else:
-                return False
-        except FileNotFoundError:
-            logger.error("Docker not found or haproxy:2.8 image unavailable")
-            return False
-
-def generate_haproxy_cfg(config, current_index=0):
-    backends = []
-    for i in range(1, config["num_tunnels"] + 1):
-        weight = 100 if (i - 1) == current_index else 1
-        backends.append(f"    server warp{i} warp{i}:{config['warp_socks_port']} check weight {weight}")
-    
-    backend_servers = "\n".join(backends)
-    
-    cfg = f"""
-global
-    log stdout format raw local0 info
-
-defaults
-    log global
-    mode tcp
-    timeout connect 10s
-    timeout client 60s
-    timeout server 60s
-
-frontend socks5_front
-    bind *:{config['haproxy_port']}
-    default_backend socks5_back
-
-backend socks5_back
-    balance roundrobin
-    option httpchk GET /cdn-cgi/trace
-{backend_servers}
-"""
-    haproxy_file = "/app/haproxy.cfg"
+# --- Helper Functions ---
+def _get_public_ip(host: str, port: int) -> Optional[str]:
+    """Fetches the public IP address through a specific SOCKS5 proxy."""
+    proxies = {"http": f"socks5h://{host}:{port}", "https": f"socks5h://{host}:{port}"}
     try:
-        with open(haproxy_file, "w") as f:
-            f.write(cfg)
-        if not validate_haproxy_cfg(haproxy_file):
-            raise HTTPException(status_code=500, detail="Invalid haproxy.cfg generated")
-    except IOError as e:
-        logger.error("Failed to write haproxy.cfg: %s", e)
-        raise HTTPException(status_code=500, detail=f"Failed to write haproxy.cfg: {e}")
+        response = requests.get("https://api.ipify.org", proxies=proxies, timeout=10)
+        response.raise_for_status()
+        ip = response.text.strip()
+        logger.info("Fetched public IP via %s:%d: %s", host, port, ip)
+        return ip
+    except requests.RequestException as e:
+        logger.warning("Could not fetch IP via %s:%d: %s", host, port, e)
+        return None
 
-def get_public_ip(tunnel_name, socks_port, retries=3, delay=2):
-    proxies = {
-        "http": f"socks5://{tunnel_name}:{socks_port}",
-        "https": f"socks5://{tunnel_name}:{socks_port}"
-    }
-    for attempt in range(retries):
-        try:
-            response = requests.get("https://api.ipify.org", proxies=proxies, timeout=10)
-            response.raise_for_status()
-            logger.info("Fetched public IP for %s: %s", tunnel_name, response.text.strip())
-            return response.text.strip()
-        except requests.RequestException as e:
-            logger.warning("Attempt %d failed to fetch IP for %s: %s", attempt + 1, tunnel_name, e)
-            if attempt == retries - 1:
-                return "N/A"
-            time.sleep(delay)
-    return "N/A"
+def _get_tunnel_details(
+    docker_client: docker.DockerClient,
+    config: Dict[str, Any],
+    tunnel_number: int,
+    is_active: bool
+) -> Tunnel:
+    """Gathers status details for a single tunnel container."""
+    tunnel_name = f"warp{tunnel_number}"
+    container_name = f"{config['project_name']}_{tunnel_name}"
+    status = "not_found"
+    host_port_base = config.get("warp_host_port_base") # This is now guaranteed by setup.py
+    direct_access_port = host_port_base + tunnel_number if host_port_base else None
 
-def get_tunnel_status(config, i):
-    container_name = f"{config['project_name']}_warp{i}"
     try:
-        container = client.containers.get(container_name)
-        return container.status
-    except docker.errors.NotFound:  # type: ignore
-        logger.error("Container %s not found", container_name)
-        return "not_found"
-    except docker.errors.APIError as e:  # type: ignore
+        container = docker_client.containers.get(container_name)
+        status = container.status
+    except docker.errors.NotFound:
+        logger.warning("Container %s not found.", container_name)
+    except docker.errors.APIError as e:
         logger.error("Docker API error for %s: %s", container_name, e)
-        return "error"
+        status = "error"
+    
+    return Tunnel(
+        name=tunnel_name, 
+        status=status, 
+        publicIP=None, # IP fetching is now on-demand
+        isActive=is_active,
+        directAccessPort=direct_access_port
+    )
 
-@app.get("/current")
-def get_current():
-    config = load_config()
-    current_index = load_current_index()
-    tunnels = []
-    for i in range(1, config["num_tunnels"] + 1):
-        name = f"warp{i}"
-        status = get_tunnel_status(config, i)
-        ip = get_public_ip(name, config["warp_socks_port"]) if status == "running" else "N/A"
-        tunnels.append({
-            "name": name,
-            "status": status,
-            "public_ip": ip,
-            "active": (i - 1) == current_index
-        })
-    return {"tunnels": tunnels}
+def _generate_and_reload_haproxy(config: Dict[str, Any], new_index: int) -> None:
+    """Generates a new haproxy.cfg from a template and reloads the HAProxy container."""
+    try:
+        env = Environment(loader=FileSystemLoader(TEMPLATES_DIR), autoescape=True)
+        template = env.get_template(HAPROXY_TEMPLATE_FILE)
 
-@app.post("/rotate")
-def rotate():
-    config = load_config()
-    current_index = load_current_index()
+        backends = [
+            {
+                "name": f"warp{i}",
+                "port": config['warp_socks_port'],
+                "weight": 100 if (i - 1) == new_index else 1
+            }
+            for i in range(1, config["num_tunnels"] + 1)
+        ]
+        
+        haproxy_content = template.render(backends=backends, **config)
+        with open(HAPROXY_CONFIG_FILE, "w") as f:
+            f.write(haproxy_content)
+        
+        logger.info("Successfully generated new haproxy.cfg.")
+        _reload_haproxy(config["project_name"])
+
+    except Exception as e:
+        logger.error("Failed to generate or reload haproxy.cfg: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to update HAProxy configuration.")
+
+def _reload_haproxy(project_name: str) -> None:
+    """Sends a SIGHUP signal to the HAProxy container to reload its config."""
+    docker_client = get_docker_client()
+    container_name = f"{project_name}_haproxy"
+    try:
+        haproxy_container = docker_client.containers.get(container_name)
+        haproxy_container.kill(signal="SIGHUP")
+        logger.info("Successfully sent reload signal to %s", container_name)
+    except docker.errors.NotFound:
+        raise HTTPException(status_code=404, detail=f"HAProxy container '{container_name}' not found.")
+    except docker.errors.APIError as e:
+        raise HTTPException(status_code=500, detail=f"Failed to reload HAProxy: {e}")
+
+# --- API Endpoints ---
+@app.get("/list", response_model=List[Tunnel], summary="List All Tunnels")
+def list_all_tunnels(
+    config: Dict[str, Any] = Depends(get_config),
+    current_index: int = Depends(get_current_index),
+    docker_client: docker.DockerClient = Depends(get_docker_client)
+):
+    """Retrieves the status and details for all available WARP tunnels."""
+    return [
+        _get_tunnel_details(docker_client, config, i, (i - 1) == current_index)
+        for i in range(1, config["num_tunnels"] + 1)
+    ]
+
+@app.get("/current", response_model=Tunnel, summary="Get Current Active Tunnel")
+def get_current_tunnel(
+    config: Dict[str, Any] = Depends(get_config),
+    current_index: int = Depends(get_current_index),
+    docker_client: docker.DockerClient = Depends(get_docker_client)
+):
+    """Retrieves the status and details for only the currently active WARP tunnel."""
+    return _get_tunnel_details(docker_client, config, current_index + 1, is_active=True)
+
+@app.get("/tunnels/{tunnel_name}/ip", response_model=Dict[str, Optional[str]], summary="Get Public IP for a Tunnel")
+def get_tunnel_ip(tunnel_name: str, config: Dict[str, Any] = Depends(get_config)):
+    """
+    Fetches the current public IP address for a specific tunnel via its direct access port.
+    This is a slow operation and should be used on demand.
+    """
+    try:
+        tunnel_number = int(tunnel_name.replace("warp", ""))
+        if not 1 <= tunnel_number <= config["num_tunnels"]:
+            raise ValueError("Tunnel number out of range.")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid tunnel name format. Use 'warp<number>'.")
+
+    host_port_base = config.get("warp_host_port_base")
+    if not host_port_base:
+        raise HTTPException(status_code=404, detail="Direct access ports are not configured.")
+        
+    direct_access_port = host_port_base + tunnel_number
+    public_ip = _get_public_ip("127.0.0.1", direct_access_port)
+    
+    if not public_ip:
+        raise HTTPException(status_code=504, detail="Could not fetch public IP. The tunnel may be down or unresponsive.")
+        
+    return {"publicIP": public_ip}
+
+@app.post("/rotate", response_model=RotateResponse, summary="Rotate to the Next Tunnel")
+def rotate_tunnel(config: Dict[str, Any] = Depends(get_config)):
+    """Rotates the active proxy to the next available tunnel in the pool."""
+    current_index = get_current_index()
     new_index = (current_index + 1) % config["num_tunnels"]
+    
+    _generate_and_reload_haproxy(config, new_index)
     save_current_index(new_index)
     
-    generate_haproxy_cfg(config, new_index)
-    
-    haproxy_container = f"{config['project_name']}_haproxy"
-    try:
-        container = client.containers.get(haproxy_container)
-        container.kill(signal="HUP")
-        logger.info("Rotated to warp%s", new_index + 1)
-        return {"status": "rotated", "new_active": f"warp{new_index + 1}"}
-    except docker.errors.NotFound:  # type: ignore
-        logger.error("HAProxy container %s not found", haproxy_container)
-        raise HTTPException(status_code=500, detail="HAProxy container not found")
-    except docker.errors.APIError as e:  # type: ignore
-        logger.error("Failed to reload HAProxy %s: %s", haproxy_container, e)
+    new_active_tunnel_name = f"warp{new_index + 1}"
+    logger.info("Rotated active tunnel to %s", new_active_tunnel_name)
+    return RotateResponse(status="rotated", newActiveTunnel=new_active_tunnel_name)
