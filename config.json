@@ -2,7 +2,9 @@
     "project_name": "warp_proxy",
     "num_tunnels": 3,
     "country": "DE",
+    "haproxy_host": "127.0.0.1",
     "haproxy_port": 9999,
+    "fastapi_host": "127.0.0.1",
     "fastapi_port": 9090,
     "warp_socks_port": 1080,
     "country_endpoints": {

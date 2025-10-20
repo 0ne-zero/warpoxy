@@ -29,7 +29,7 @@ services:
     container_name: {{ project_name }}_haproxy
     restart: always
     ports:
-      - "{{ haproxy_port }}:{{ haproxy_port }}"
+      - "{{haproxy_host}}:{{ haproxy_port }}:{{ haproxy_port }}"
     volumes:
       - ./haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
     networks:
@@ -45,14 +45,16 @@ services:
       context: {{ api_service.build.context }}
       dockerfile: {{ api_service.build.dockerfile }}
     container_name: {{ api_service.container_name }}
-    restart: {{ api_service.restart }}
+    restart: always
     ports:
-      - "{{ fastapi_port }}:{{ fastapi_port }}"
+      - "{{fastapi_host}}:{{ fastapi_port }}:{{ fastapi_port }}"
     volumes:
-      - {{ SCRIPT_DIR }}:/app
+      - ./config.json:/app/config.json:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
     environment:
       - CONFIG_PATH=/app/config.json
+    # NOTE: The --host 0.0.0.0 here is for INSIDE the container, which is correct.
+    # The 'ports' section above controls the EXTERNAL access.
     command: uvicorn main:app --host 0.0.0.0 --port {{ fastapi_port }} --log-level warning
     networks:
       - warpnet
