@@ -7,6 +7,9 @@ services:
       dockerfile: {{ service_config.build.dockerfile }}
     container_name: {{ service_config.container_name }}
     restart: {{ service_config.restart }}
+    # Expose the internal SOCKS port to a unique port on the host
+    ports:
+      - "127.0.0.1:{{ service_config.warp_host_port }}:{{ warp_socks_port }}"
     environment:
 {% for k, v in service_config.environment.items() %}
       - {{ k }}={{ v }}
@@ -50,11 +53,12 @@ services:
       - "{{fastapi_host}}:{{ fastapi_port }}:{{ fastapi_port }}"
     volumes:
       - ./config.json:/app/config.json:ro
+      - ./current_index.json:/app/current_index.json
+      - ./haproxy.cfg:/app/haproxy.cfg
+      - ./templates:/app/templates:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
     environment:
       - CONFIG_PATH=/app/config.json
-    # NOTE: The --host 0.0.0.0 here is for INSIDE the container, which is correct.
-    # The 'ports' section above controls the EXTERNAL access.
     command: uvicorn main:app --host 0.0.0.0 --port {{ fastapi_port }} --log-level warning
     networks:
       - warpnet
