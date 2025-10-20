@@ -1,5 +1,5 @@
 {
-    "project_name": "warp_proxy",
+    "project_name": "warpoxy",
     "num_tunnels": 3,
     "country": "DE",
     "haproxy_host": "127.0.0.1",
@@ -7,6 +7,7 @@
     "fastapi_host": "127.0.0.1",
     "fastapi_port": 9090,
     "warp_socks_port": 1080,
+    "warp_host_port_base": 11080,
     "country_endpoints": {
         "US": "iad.cloudflare-gateway.com:2408",
         "CA": "yul.cloudflare-gateway.com:2408",
