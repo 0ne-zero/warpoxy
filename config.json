@@ -2,22 +2,374 @@
     "project_name": "warpoxy",
     "num_tunnels": 3,
     "country": "DE",
+    "puid": 911,
+    "pgid": 911,
+    "timezone": "Asia/Shanghai",
     "haproxy_host": "127.0.0.1",
     "haproxy_port": 9999,
     "fastapi_host": "127.0.0.1",
     "fastapi_port": 9090,
     "warp_socks_port": 1080,
     "warp_host_port_base": 11080,
+    "default_endpoint": "engage.cloudflareclient.com:2408",
     "country_endpoints": {
-        "US": "iad.cloudflare-gateway.com:2408",
-        "CA": "yul.cloudflare-gateway.com:2408",
-        "GB": "lhr.cloudflare-gateway.com:2408",
-        "DE": "fra.cloudflare-gateway.com:2408",
-        "FR": "cdg.cloudflare-gateway.com:2408",
-        "IN": "bom.cloudflare-gateway.com:2408",
-        "JP": "nrt.cloudflare-gateway.com:2408",
-        "AU": "syd.cloudflare-gateway.com:2408",
-        "BR": "gru.cloudflare-gateway.com:2408"
-    },
-    "default_endpoint": "engage.cloudflareclient.com:2408"
+        "AF": [
+            "kbl.cloudflare-gateway.com:2408"
+        ],
+        "AL": [
+            "tia.cloudflare-gateway.com:2408"
+        ],
+        "DZ": [
+            "alg.cloudflare-gateway.com:2408"
+        ],
+        "AO": [
+            "lad.cloudflare-gateway.com:2408"
+        ],
+        "AR": [
+            "eze.cloudflare-gateway.com:2408"
+        ],
+        "AM": [
+            "evn.cloudflare-gateway.com:2408"
+        ],
+        "AU": [
+            "syd.cloudflare-gateway.com:2408",
+            "mel.cloudflare-gateway.com:2408",
+            "per.cloudflare-gateway.com:2408",
+            "bne.cloudflare-gateway.com:2408",
+            "adl.cloudflare-gateway.com:2408",
+            "cbr.cloudflare-gateway.com:2408"
+        ],
+        "AT": [
+            "vie.cloudflare-gateway.com:2408"
+        ],
+        "AZ": [
+            "gyd.cloudflare-gateway.com:2408"
+        ],
+        "BH": [
+            "bah.cloudflare-gateway.com:2408"
+        ],
+        "BD": [
+            "dac.cloudflare-gateway.com:2408"
+        ],
+        "BY": [
+            "msq.cloudflare-gateway.com:2408"
+        ],
+        "BE": [
+            "bru.cloudflare-gateway.com:2408"
+        ],
+        "BO": [
+            "lpb.cloudflare-gateway.com:2408"
+        ],
+        "BA": [
+            "sjj.cloudflare-gateway.com:2408"
+        ],
+        "BR": [
+            "gru.cloudflare-gateway.com:2408",
+            "gig.cloudflare-gateway.com:2408",
+            "poa.cloudflare-gateway.com:2408",
+            "for.cloudflare-gateway.com:2408"
+        ],
+        "BG": [
+            "sof.cloudflare-gateway.com:2408"
+        ],
+        "KH": [
+            "pnh.cloudflare-gateway.com:2408"
+        ],
+        "CA": [
+            "yyz.cloudflare-gateway.com:2408",
+            "yul.cloudflare-gateway.com:2408",
+            "yvr.cloudflare-gateway.com:2408",
+            "yyc.cloudflare-gateway.com:2408",
+            "ywg.cloudflare-gateway.com:2408",
+            "yow.cloudflare-gateway.com:2408"
+        ],
+        "CL": [
+            "scl.cloudflare-gateway.com:2408"
+        ],
+        "CN": [
+            "pek.cloudflare-gateway.com:2408",
+            "cjg.cloudflare-gateway.com:2408",
+            "sha.cloudflare-gateway.com:2408"
+        ],
+        "CO": [
+            "bog.cloudflare-gateway.com:2408"
+        ],
+        "CR": [
+            "sjo.cloudflare-gateway.com:2408"
+        ],
+        "HR": [
+            "zag.cloudflare-gateway.com:2408"
+        ],
+        "CY": [
+            "nic.cloudflare-gateway.com:2408"
+        ],
+        "CZ": [
+            "prg.cloudflare-gateway.com:2408"
+        ],
+        "DK": [
+            "cph.cloudflare-gateway.com:2408"
+        ],
+        "DO": [
+            "sdq.cloudflare-gateway.com:2408"
+        ],
+        "EC": [
+            "uio.cloudflare-gateway.com:2408"
+        ],
+        "EG": [
+            "cai.cloudflare-gateway.com:2408"
+        ],
+        "EE": [
+            "tll.cloudflare-gateway.com:2408"
+        ],
+        "FI": [
+            "hel.cloudflare-gateway.com:2408"
+        ],
+        "FR": [
+            "cdg.cloudflare-gateway.com:2408",
+            "mrs.cloudflare-gateway.com:2408"
+        ],
+        "GE": [
+            "tbs.cloudflare-gateway.com:2408"
+        ],
+        "DE": [
+            "fra.cloudflare-gateway.com:2408",
+            "dus.cloudflare-gateway.com:2408",
+            "ham.cloudflare-gateway.com:2408",
+            "muc.cloudflare-gateway.com:2408",
+            "str.cloudflare-gateway.com:2408",
+            "ber.cloudflare-gateway.com:2408"
+        ],
+        "GR": [
+            "ath.cloudflare-gateway.com:2408"
+        ],
+        "GT": [
+            "gua.cloudflare-gateway.com:2408"
+        ],
+        "HK": [
+            "hkg.cloudflare-gateway.com:2408"
+        ],
+        "HU": [
+            "bud.cloudflare-gateway.com:2408"
+        ],
+        "IS": [
+            "kef.cloudflare-gateway.com:2408"
+        ],
+        "IN": [
+            "bom.cloudflare-gateway.com:2408",
+            "maa.cloudflare-gateway.com:2408",
+            "del.cloudflare-gateway.com:2408",
+            "blr.cloudflare-gateway.com:2408",
+            "ccu.cloudflare-gateway.com:2408",
+            "hyd.cloudflare-gateway.com:2408"
+        ],
+        "ID": [
+            "cgk.cloudflare-gateway.com:2408"
+        ],
+        "IQ": [
+            "bgw.cloudflare-gateway.com:2408"
+        ],
+        "IE": [
+            "dub.cloudflare-gateway.com:2408",
+            "ork.cloudflare-gateway.com:2408"
+        ],
+        "IL": [
+            "tlv.cloudflare-gateway.com:2408"
+        ],
+        "IT": [
+            "mxp.cloudflare-gateway.com:2408",
+            "fco.cloudflare-gateway.com:2408",
+            "pmo.cloudflare-gateway.com:2408"
+        ],
+        "JM": [
+            "kin.cloudflare-gateway.com:2408"
+        ],
+        "JP": [
+            "nrt.cloudflare-gateway.com:2408",
+            "kix.cloudflare-gateway.com:2408",
+            "fuk.cloudflare-gateway.com:2408"
+        ],
+        "JO": [
+            "amm.cloudflare-gateway.com:2408"
+        ],
+        "KZ": [
+            "ala.cloudflare-gateway.com:2408"
+        ],
+        "KE": [
+            "nbo.cloudflare-gateway.com:2408",
+            "mba.cloudflare-gateway.com:2408"
+        ],
+        "KW": [
+            "kwi.cloudflare-gateway.com:2408"
+        ],
+        "LV": [
+            "rix.cloudflare-gateway.com:2408"
+        ],
+        "LB": [
+            "bey.cloudflare-gateway.com:2408"
+        ],
+        "LT": [
+            "vno.cloudflare-gateway.com:2408"
+        ],
+        "LU": [
+            "lux.cloudflare-gateway.com:2408"
+        ],
+        "MY": [
+            "kul.cloudflare-gateway.com:2408"
+        ],
+        "MX": [
+            "mex.cloudflare-gateway.com:2408"
+        ],
+        "MD": [
+            "kiv.cloudflare-gateway.com:2408"
+        ],
+        "MN": [
+            "uln.cloudflare-gateway.com:2408"
+        ],
+        "MA": [
+            "cas.cloudflare-gateway.com:2408"
+        ],
+        "MM": [
+            "rgn.cloudflare-gateway.com:2408"
+        ],
+        "NP": [
+            "ktm.cloudflare-gateway.com:2408"
+        ],
+        "NL": [
+            "ams.cloudflare-gateway.com:2408"
+        ],
+        "NZ": [
+            "akl.cloudflare-gateway.com:2408"
+        ],
+        "NG": [
+            "los.cloudflare-gateway.com:2408"
+        ],
+        "MK": [
+            "skp.cloudflare-gateway.com:2408"
+        ],
+        "NO": [
+            "osl.cloudflare-gateway.com:2408"
+        ],
+        "OM": [
+            "mct.cloudflare-gateway.com:2408"
+        ],
+        "PK": [
+            "khi.cloudflare-gateway.com:2408",
+            "lhe.cloudflare-gateway.com:2408"
+        ],
+        "PA": [
+            "pty.cloudflare-gateway.com:2408"
+        ],
+        "PY": [
+            "asu.cloudflare-gateway.com:2408"
+        ],
+        "PE": [
+            "lim.cloudflare-gateway.com:2408"
+        ],
+        "PH": [
+            "mnl.cloudflare-gateway.com:2408"
+        ],
+        "PL": [
+            "waw.cloudflare-gateway.com:2408"
+        ],
+        "PT": [
+            "lis.cloudflare-gateway.com:2408"
+        ],
+        "QA": [
+            "doh.cloudflare-gateway.com:2408"
+        ],
+        "RO": [
+            "otp.cloudflare-gateway.com:2408"
+        ],
+        "RU": [
+            "led.cloudflare-gateway.com:2408",
+            "svx.cloudflare-gateway.com:2408"
+        ],
+        "SA": [
+            "jed.cloudflare-gateway.com:2408",
+            "ruh.cloudflare-gateway.com:2408"
+        ],
+        "RS": [
+            "beg.cloudflare-gateway.com:2408"
+        ],
+        "SG": [
+            "sin.cloudflare-gateway.com:2408"
+        ],
+        "SK": [
+            "bts.cloudflare-gateway.com:2408"
+        ],
+        "SI": [
+            "lju.cloudflare-gateway.com:2408"
+        ],
+        "ZA": [
+            "jnb.cloudflare-gateway.com:2408",
+            "cpt.cloudflare-gateway.com:2408",
+            "dur.cloudflare-gateway.com:2408"
+        ],
+        "KR": [
+            "icn.cloudflare-gateway.com:2408"
+        ],
+        "ES": [
+            "mad.cloudflare-gateway.com:2408",
+            "bcn.cloudflare-gateway.com:2408"
+        ],
+        "LK": [
+            "cmb.cloudflare-gateway.com:2408"
+        ],
+        "SE": [
+            "arn.cloudflare-gateway.com:2408"
+        ],
+        "CH": [
+            "zrh.cloudflare-gateway.com:2408",
+            "gva.cloudflare-gateway.com:2408"
+        ],
+        "TW": [
+            "tpe.cloudflare-gateway.com:2408"
+        ],
+        "TZ": [
+            "dar.cloudflare-gateway.com:2408"
+        ],
+        "TH": [
+            "bkk.cloudflare-gateway.com:2408"
+        ],
+        "TR": [
+            "ist.cloudflare-gateway.com:2408"
+        ],
+        "UG": [
+            "ebb.cloudflare-gateway.com:2408"
+        ],
+        "UA": [
+            "kbp.cloudflare-gateway.com:2408"
+        ],
+        "AE": [
+            "dxb.cloudflare-gateway.com:2408",
+            "fjr.cloudflare-gateway.com:2408"
+        ],
+        "GB": [
+            "lhr.cloudflare-gateway.com:2408",
+            "man.cloudflare-gateway.com:2408",
+            "gla.cloudflare-gateway.com:2408",
+            "edi.cloudflare-gateway.com:2408"
+        ],
+        "US": [
+            "iad.cloudflare-gateway.com:2408",
+            "sjc.cloudflare-gateway.com:2408",
+            "ord.cloudflare-gateway.com:2408",
+            "atl.cloudflare-gateway.com:2408",
+            "dfw.cloudflare-gateway.com:2408",
+            "den.cloudflare-gateway.com:2408",
+            "lax.cloudflare-gateway.com:2408",
+            "mia.cloudflare-gateway.com:2408",
+            "sea.cloudflare-gateway.com:2408",
+            "ewr.cloudflare-gateway.com:2408",
+            "phx.cloudflare-gateway.com:2408",
+            "bos.cloudflare-gateway.com:2408"
+        ],
+        "UY": [
+            "mvd.cloudflare-gateway.com:2408"
+        ],
+        "VN": [
+            "han.cloudflare-gateway.com:2408",
+            "sgn.cloudflare-gateway.com:2408"
+        ]
+    }
 }
