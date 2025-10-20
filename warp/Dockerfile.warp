@@ -1,12 +1,5 @@
 FROM ubuntu:22.04
 
-# Set environment variables for versions and settings
-ENV PUID=911
-ENV PGID=911
-ENV TZ=Asia/Shanghai
-ENV SOCKS5_PORT=1080
-ENV ENDPOINT=engage.cloudflareclient.com:2408
-
 # Combine installation steps into a single RUN command to reduce image layers
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
