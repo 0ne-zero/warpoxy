@@ -205,3 +205,9 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+
+warp/warp*
+current_index.json
+docker-compose.yml
+haproxy.cfg
