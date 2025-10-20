@@ -15,7 +15,6 @@ CONFIG_FILE = SCRIPT_DIR / "config.json"
 COMPOSE_FILE = SCRIPT_DIR / "docker-compose.yml"
 GENERATED_FILES = ["docker-compose.yml", "haproxy.cfg", "current_index.json"]
 WARP_CONFIG_DIR_PATTERN = str(SCRIPT_DIR / "warp" / "warp*_config")
-DEFAULT_PROJECT_NAME = "warp_proxy"
 
 # --- Logger Setup ---
 logger = logging.getLogger(__name__)
@@ -38,17 +37,12 @@ def load_config() -> Dict[str, Any]:
     """
     Load project_name from config.json with simplified error handling.
     """
-    try:
-        with open(CONFIG_FILE, "r") as f:
-            config = json.load(f)
-        if "project_name" not in config:
-            raise ValueError("Missing 'project_name' key in config.json")
-        logger.debug("Successfully loaded configuration from %s", CONFIG_FILE)
-        return config
-    except (FileNotFoundError, json.JSONDecodeError, ValueError) as e:
-        logger.warning("Could not load config (%s). Falling back to default project name '%s'.", e, DEFAULT_PROJECT_NAME)
-        return {"project_name": DEFAULT_PROJECT_NAME}
-
+    with open(CONFIG_FILE, "r") as f:
+        config = json.load(f)
+    if "project_name" not in config:
+        raise ValueError("Missing 'project_name' key in config.json")
+    logger.debug("Successfully loaded configuration from %s", CONFIG_FILE)
+    return config
 
 def run_command(cmd: List[str], description: str) -> bool:
     """
