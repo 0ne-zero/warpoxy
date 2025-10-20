@@ -22,7 +22,6 @@ COMPOSE_OUTPUT_FILE = SCRIPT_DIR / "docker-compose.yml"
 HAPROXY_OUTPUT_FILE = SCRIPT_DIR / "haproxy.cfg"
 CONFIG_FILE = SCRIPT_DIR / "config.json"
 API_DIR_CONFIG_FILE = API_DIR / "config.json"
-LOG_FILE = SCRIPT_DIR / "setup.log"
 
 # --- Logger Setup ---
 # This will be configured in main()
@@ -39,15 +38,10 @@ def setup_logging(verbose: bool) -> None:
     console_formatter = logging.Formatter("[%(levelname)s] %(message)s")
     console_handler.setFormatter(console_formatter)
 
-    # File Handler (for detailed, debug-level output)
-    file_handler = logging.FileHandler(LOG_FILE, mode='w')
-    file_handler.setLevel(logging.DEBUG)
-    file_formatter = logging.Formatter("%(asctime)s - %(levelname)s - [%(funcName)s:%(lineno)d] %(message)s")
-    file_handler.setFormatter(file_formatter)
 
     # Configure the root logger
-    logging.basicConfig(level=logging.DEBUG, handlers=[console_handler, file_handler])
-    logger.info("Logging initialized. Detailed logs are in %s", LOG_FILE)
+    logging.basicConfig(level=logging.DEBUG, handlers=[console_handler])
+    logger.info("Logging initialized.")
 
 
 def load_config() -> Dict[str, Any]:
