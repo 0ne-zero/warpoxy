@@ -18,6 +18,7 @@ WARP_DIR = SCRIPT_DIR / "warp"
 API_DIR = SCRIPT_DIR / "api"
 COMPOSE_TEMPLATE_FILE = "docker-compose.yml.j2"
 HAPROXY_TEMPLATE_FILE = "haproxy.cfg.j2"
+API_DIR_HAPROXY_TEMPLATE_FILE = API_DIR / "haproxy.cfg.j2"
 COMPOSE_OUTPUT_FILE = SCRIPT_DIR / "docker-compose.yml"
 HAPROXY_OUTPUT_FILE = SCRIPT_DIR / "haproxy.cfg"
 CONFIG_FILE = SCRIPT_DIR / "config.json"
@@ -149,6 +150,7 @@ def generate_files_from_templates(config: Dict[str, Any]) -> None:
     endpoint = config["country_endpoints"].get(config["country"].upper(), config["default_endpoint"])
     warp_services = {
         f"warp{i}": {
+            "warp_host_port": config["warp_host_port_base"] + i,
             "build": {"context": SCRIPT_DIR, "dockerfile": WARP_DIR / "Dockerfile.warp"},
             "container_name": f"{config['project_name']}_warp{i}",
             "restart": "always",
@@ -179,12 +181,19 @@ def generate_files_from_templates(config: Dict[str, Any]) -> None:
         sys.exit(1)
 
     # --- Generate haproxy.cfg ---
-    backends = [{"name": f"warp{i}", "port": config['warp_socks_port']} for i in range(1, config["num_tunnels"] + 1)]
+    backends = [
+        {
+            "name": f"warp{i}",
+            "port": config['warp_socks_port'],
+            "weight": 100 if (i - 1) == 0 else 1 # Give first one highest weight by default
+        }
+        for i in range(1, config["num_tunnels"] + 1)
+    ]
     if HAPROXY_OUTPUT_FILE.is_dir():
         logger.warning("Removing leftover '%s' directory from a previous failed run.", HAPROXY_OUTPUT_FILE)
         shutil.rmtree(HAPROXY_OUTPUT_FILE)
     try:
-        haproxy_template = env.get_template(HAPROXY_TEMPLATE_FILE)
+        haproxy_template = env.get_template(str(HAPROXY_TEMPLATE_FILE))
         haproxy_content = haproxy_template.render(backends=backends, **config)
         with open(HAPROXY_OUTPUT_FILE, "w") as f:
             f.write(haproxy_content)
@@ -221,11 +230,9 @@ def main() -> None:
 
         # Step 3: Start all services
         logger.info("[STEP 3/4] Building and starting services with Docker Compose...")
-        shutil.copy(SCRIPT_DIR / CONFIG_FILE, API_DIR)
         compose_cmd = ["docker-compose", "-f", str(COMPOSE_OUTPUT_FILE), "up", "-d", "--build", "--remove-orphans"]
         run_command(compose_cmd, "start services")
         logger.info("✅ Services started successfully.")
-        os.remove(API_DIR_CONFIG_FILE)
 
         # Step 4: Verify setup by checking health
         logger.info("[STEP 4/4] Verifying service health...")
